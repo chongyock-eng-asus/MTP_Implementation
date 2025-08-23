@@ -82,7 +82,7 @@ class MultiTokenPredictionModel(nn.Module):
         super().__init__()
 
         # Load base model
-        self.base_model = AutoModelForCausalLM.from_pretrained(config['model_basename'])
+        self.base_model = AutoModelForCausalLM.from_pretrained(config['model_basename'], token=config['API_KEY'])
         self.config = self.base_model.config 
         self.num_masks = config['num_masks']
         self.tokenizer = tokenizer
