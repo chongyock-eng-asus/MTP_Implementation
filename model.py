@@ -78,11 +78,11 @@ class MultiTokenPredictionModel(nn.Module):
     """
     Multi-Token Prediction Model with Gated LoRA and Sampler Head
     """
-    def __init__(self, config, tokenizer):
+    def __init__(self, config, tokenizer, device=None):
         super().__init__()
 
         # Load base model
-        self.base_model = AutoModelForCausalLM.from_pretrained(config['model_basename'], token=config['API_KEY'])
+        self.base_model = AutoModelForCausalLM.from_pretrained(config['model_basename'], token=config['API_KEY'], device_map='auto')
         self.config = self.base_model.config 
         self.num_masks = config['num_masks']
         self.tokenizer = tokenizer
@@ -118,6 +118,10 @@ class MultiTokenPredictionModel(nn.Module):
         # Hook portion to review
         self.current_mtp_mask = None
         self._register_permanent_hooks()
+
+        if device is not None:
+            self.base_model = self.base_model.to(device)
+            self.sampler_head = self.sampler_head.to(device)
 
     def _gated_lora_hook(self, module, input, output):
         """
@@ -254,7 +258,7 @@ class MultiTokenPredictionModel(nn.Module):
         # For now generate autoregressively until all masks are filled
         tokenized_output = self.tokenizer(text)
         encoded_input = tokenized_output['input_ids']
-        input_tensor = torch.tensor(encoded_input).unsqueeze(0)
+        input_tensor = torch.tensor(encoded_input).unsqueeze(0).to(self.base_model.device)
 
         start_time = time.time()
         sc_output =  self.speculative_decoding(input_tensor)
@@ -294,15 +298,19 @@ class MultiTokenPredictionModel(nn.Module):
     
     def speculative_decoding(self, input_tensor:torch.tensor):
 
+        device = input_tensor.device
+        print(f"Input tensor:   {input_tensor}")
         masked_token_ids = self.tokenizer.custom_mask_token_ids 
-        masked_token_tensor = torch.tensor(masked_token_ids).unsqueeze(0) 
+        masked_token_tensor = torch.tensor(masked_token_ids).unsqueeze(0).to(device) 
         current_mtp_idx = input_tensor.shape[1] 
 
         input_with_mask_tensor = torch.concat([input_tensor, masked_token_tensor],dim=-1)
+        print(f"Input tensor with mask: {input_with_mask_tensor}")
 
-        mtp_mask = torch.concat([torch.zeros(input_tensor.shape[0], input_tensor.shape[1] + 1),
-                        torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1] - 1)], dim=-1).bool()
-
+        mtp_mask = torch.concat([torch.zeros(input_tensor.shape[0], input_tensor.shape[1] + 1, device=device),
+                        torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1] - 1, device=device)], dim=-1).bool()
+        print(f"MTP mask: {mtp_mask}")
+        
         self.current_mtp_mask = mtp_mask # [batch, seq_len]
         with torch.no_grad():
             outputs = self.base_model(
@@ -312,8 +320,10 @@ class MultiTokenPredictionModel(nn.Module):
                 )
             hidden_states = outputs.hidden_states[-1]
             next_token = torch.argmax(outputs.logits, dim=-1)[:, current_mtp_idx-1].unsqueeze(0)
-            input_with_mask_tensor[:,current_mtp_idx] = next_token
+            print(f"Predicted next token: {next_token}")
 
+            input_with_mask_tensor[:,current_mtp_idx] = next_token
+            print(f"Input tensor after first prediction: {input_with_mask_tensor}") 
             # Sample the remaining tokens
             shifted_input_ids = torch.cat([torch.zeros_like(input_with_mask_tensor[:, :1]), input_with_mask_tensor[:, :-1]], dim=1)
 
@@ -325,7 +335,11 @@ class MultiTokenPredictionModel(nn.Module):
             mtp_prev_emb = prev_embeddings[mtp_positions]
             mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb)
             next_tokens = torch.argmax(mtp_sampler_logits, dim=-1).unsqueeze(0) # [batch, seq_len]
+            print(f"Input tensor after sampling: {next_tokens}") 
+
             input_with_mask_tensor[:,-(self.num_masks-1):] = next_tokens
+            print(f"Predicted full tokens: {input_with_mask_tensor}") 
+
 
         self.current_mtp_mask = None
 
@@ -342,6 +356,9 @@ class MultiTokenPredictionModel(nn.Module):
         verification_tensor1 = ntp_verification_tensor[:, -(self.num_masks-1):]
         verification_tensor2 = input_with_mask_tensor[:,1:][:, -(self.num_masks-1):] 
         mismatch_mask = verification_tensor1 != verification_tensor2
+        print(f"Speculated tokens: {verification_tensor1}") 
+        print(f"Verification tokens: {verification_tensor2}") 
+        print(f"Mismatch mask:  {mismatch_mask}")
         if mismatch_mask.any():
             first_mismatch_abs = torch.where(mismatch_mask)[1][0] + verification_tensor1.shape[1] - (self.num_masks - 1)
             print(f'Speculated {first_mismatch_abs} token successfully')
