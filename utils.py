@@ -1,4 +1,5 @@
 from transformers import AutoTokenizer
+import torch
 
 def get_tokenizer(config):
     tokenizer = AutoTokenizer.from_pretrained(config['model_basename'], model_max_length=config['max_length'], token=config['API_KEY'])
