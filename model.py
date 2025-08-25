@@ -16,27 +16,27 @@ class GatedLoRALinear(nn.Module):
         self.rank = rank
         self.alpha = alpha
         self.scaling = alpha / rank
-        
+
         # LoRA parameters
         self.lora_A = nn.Parameter(torch.randn(rank, base_layer.in_features) * 0.01) # [rank, in_features]
         self.lora_B = nn.Parameter(torch.randn(base_layer.out_features, rank) * 0.01) # [out_features, rank]
         self.dropout = nn.Dropout(dropout)
-        
+
         # Freeze base layer
         for param in self.base_layer.parameters():
             param.requires_grad = False
-    
+
     def forward(self, x: torch.Tensor, mtp_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         # Base transformation
         base_output = self.base_layer(x)
-        
+
         if mtp_mask is None:
             return base_output
-        
+
         # LoRA transformation
         lora_output = self.dropout(x) @ self.lora_A.T @ self.lora_B.T * self.scaling
         gated_output = torch.where(mtp_mask.unsqueeze(-1), base_output + lora_output, base_output)
-        
+
         return gated_output
 
 
@@ -47,7 +47,7 @@ class SamplerHead(nn.Module):
     def __init__(self, hidden_size: int, vocab_size: int):
         super().__init__()
         self.hidden_size = hidden_size
-        
+
         # Two-layer MLP
         self.mlp = nn.Sequential(
             nn.Linear(2 * hidden_size, hidden_size),
@@ -57,20 +57,20 @@ class SamplerHead(nn.Module):
             nn.SiLU(),
             nn.LayerNorm(hidden_size)
         )
-        
+
         # Output projection to vocabulary
         self.output_projection = nn.Linear(hidden_size, vocab_size)
-    
+
     def forward(self, hidden_states: torch.Tensor, previous_embeddings: torch.Tensor) -> torch.Tensor:
         # Concatenate hidden states with previous token embeddings
         combined = torch.cat([hidden_states, previous_embeddings], dim=-1)
-        
+
         # Pass through MLP
         features = self.mlp(combined)
-        
+
         # Project to vocabulary
         logits = self.output_projection(features)
-        
+
         return logits
 
 
@@ -83,7 +83,7 @@ class MultiTokenPredictionModel(nn.Module):
 
         # Load base model
         self.base_model = AutoModelForCausalLM.from_pretrained(config['model_basename'], token=config['API_KEY'], device_map='auto')
-        self.config = self.base_model.config 
+        self.config = self.base_model.config
         self.num_masks = config['num_masks']
         self.tokenizer = tokenizer
         self.vocab_size = len(tokenizer)
@@ -92,7 +92,7 @@ class MultiTokenPredictionModel(nn.Module):
 
         # Resize embeddings
         self.base_model.resize_token_embeddings(self.vocab_size)
-        
+
         # Create sampler head
         self.sampler_head = SamplerHead(
             self.config.hidden_size,
@@ -153,7 +153,7 @@ class MultiTokenPredictionModel(nn.Module):
                 layer_name = name.split('.')[-1]
                 parent_module = self.base_model.get_submodule(parent_name)
                 setattr(parent_module, layer_name, gated_layer)
-    
+
 
     def forward(
         self,
@@ -162,7 +162,7 @@ class MultiTokenPredictionModel(nn.Module):
         labels: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor]=None,
     ) -> Dict[str, torch.Tensor]:
-        
+
         # Introduce mtp_mask hooks here
         self.current_mtp_mask = mtp_mask
 
@@ -174,31 +174,31 @@ class MultiTokenPredictionModel(nn.Module):
         )
         logits = outputs.logits
         hidden_state = outputs.hidden_states[-1]
-        
+
         base_loss = self._calculate_base_loss(logits, labels, mtp_mask)
         sampler_loss = self._calculate_sampler_loss(input_ids, hidden_state, mtp_mask, labels)
         lcm_loss = self._calculate_lcm_loss(position_ids, hidden_state, mtp_mask)
         total_loss = base_loss + sampler_loss + lcm_loss
         self.current_mtp_mask = None
-        
+
         return {
-            'logits':logits, 
-            'total_loss':total_loss, 
-            'base_loss':base_loss, 
-            'sampler_loss':sampler_loss, 
-            'lcm_loss':sampler_loss,
+            'logits':logits,
+            'total_loss':total_loss,
+            'base_loss':base_loss,
+            'sampler_loss':sampler_loss,
+            'lcm_loss':lcm_loss,
             }
 
     def _calculate_base_loss(self, logits: torch.Tensor, labels:torch.Tensor, mtp_mask: torch.Tensor):
         masked_labels = labels.clone()
-        masked_labels[mtp_mask] = -100
+        # masked_labels[~mtp_mask] = -100
         base_loss = F.cross_entropy(
         logits.view(-1, self.vocab_size), # [batch * seq_len, vocab_size]
         masked_labels.view(-1), # [seq_len]
         ignore_index=-100)
         return base_loss
-        
-    
+
+
     def _calculate_sampler_loss(self, input_ids:torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels:torch.Tensor):
         # Get embeddings for input tokens
         embedding = self.base_model.get_input_embeddings()
@@ -206,7 +206,7 @@ class MultiTokenPredictionModel(nn.Module):
         prev_embeddings = embedding(shifted_input_ids)
 
         mtp_positions = mtp_mask.bool()
-        mtp_hidden = hidden_state[mtp_positions] 
+        mtp_hidden = hidden_state[mtp_positions]
         mtp_prev_emb = prev_embeddings[mtp_positions]
         mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb) # [num_mtp_tokens, vocab_size]
         mtp_labels = labels[mtp_positions] # [num_mtp_tokens]
@@ -215,9 +215,9 @@ class MultiTokenPredictionModel(nn.Module):
                 mtp_sampler_logits, # [num_mtp_tokens, vocab_size]
                 mtp_labels,  # [num_mtp_tokens]
                 ignore_index=-100)
-            
+
         return sampler_loss
-        
+
     def _calculate_lcm_loss(self, position_mask:torch.Tensor, hidden_state:torch.Tensor, mtp_mask:torch.Tensor):
         true_positions = torch.where(~mtp_mask)[1]
         total_lcm_loss = 0
@@ -238,20 +238,17 @@ class MultiTokenPredictionModel(nn.Module):
                     total_lcm_loss += lcm_loss/length_set
 
         return total_lcm_loss.mean()
-    
+
     def get_trainable_parameters(self):
         """Get all trainable parameters"""
         trainable_params = []
 
-        # LoRA parameters
-        for name, module in self.named_modules():
-            if isinstance(module, GatedLoRALinear):
-                trainable_params.extend([module.lora_A, module.lora_B])
+        # Get ALL trainable parameters directly
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                trainable_params.append(param)
 
-        # Sampler head parameters
-        trainable_params.extend(self.sampler_head.parameters())
-
-        return [p for p in trainable_params if p.requires_grad]
+        return trainable_params
 
     def generate(self, text: str):
 
@@ -273,7 +270,7 @@ class MultiTokenPredictionModel(nn.Module):
 
 
         return {
-            'sc_output': sc_output, 
+            'sc_output': sc_output,
             'sc_inference_time': sc_inference_time,
             'sc_decoded_output': sc_decoded_output,
             'ar_output': ar_output,
@@ -281,8 +278,8 @@ class MultiTokenPredictionModel(nn.Module):
             'ar_decoded_output':ar_decoded_output
             }
 
-        
-    
+
+
     def autoregressive_decoding(self, input_tensor:torch.tensor, num_steps:int):
         self.current_mtp_mask = None
         with torch.no_grad():
@@ -295,14 +292,14 @@ class MultiTokenPredictionModel(nn.Module):
                 next_token = torch.argmax(outputs.logits, dim=-1)[:,-1].unsqueeze(0)
                 input_tensor = torch.concat([input_tensor, next_token], dim=-1)
         return input_tensor
-    
+
     def speculative_decoding(self, input_tensor:torch.tensor):
 
         device = input_tensor.device
         print(f"Input tensor:   {input_tensor}")
-        masked_token_ids = self.tokenizer.custom_mask_token_ids 
-        masked_token_tensor = torch.tensor(masked_token_ids).unsqueeze(0).to(device) 
-        current_mtp_idx = input_tensor.shape[1] 
+        masked_token_ids = self.tokenizer.custom_mask_token_ids
+        masked_token_tensor = torch.tensor(masked_token_ids).unsqueeze(0).to(device)
+        current_mtp_idx = input_tensor.shape[1]
 
         input_with_mask_tensor = torch.concat([input_tensor, masked_token_tensor],dim=-1)
         print(f"Input tensor with mask: {input_with_mask_tensor}")
@@ -310,7 +307,7 @@ class MultiTokenPredictionModel(nn.Module):
         mtp_mask = torch.concat([torch.zeros(input_tensor.shape[0], input_tensor.shape[1] + 1, device=device),
                         torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1] - 1, device=device)], dim=-1).bool()
         print(f"MTP mask: {mtp_mask}")
-        
+
         self.current_mtp_mask = mtp_mask # [batch, seq_len]
         with torch.no_grad():
             outputs = self.base_model(
@@ -323,7 +320,7 @@ class MultiTokenPredictionModel(nn.Module):
             print(f"Predicted next token: {next_token}")
 
             input_with_mask_tensor[:,current_mtp_idx] = next_token
-            print(f"Input tensor after first prediction: {input_with_mask_tensor}") 
+            print(f"Input tensor after first prediction: {input_with_mask_tensor}")
             # Sample the remaining tokens
             shifted_input_ids = torch.cat([torch.zeros_like(input_with_mask_tensor[:, :1]), input_with_mask_tensor[:, :-1]], dim=1)
 
@@ -331,14 +328,14 @@ class MultiTokenPredictionModel(nn.Module):
             prev_embeddings = embedding(shifted_input_ids)
             mtp_mask[:,current_mtp_idx] = 0 # since next predicted token is verified
             mtp_positions = mtp_mask.bool()
-            mtp_hidden = hidden_states[mtp_positions] 
+            mtp_hidden = hidden_states[mtp_positions]
             mtp_prev_emb = prev_embeddings[mtp_positions]
             mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb)
             next_tokens = torch.argmax(mtp_sampler_logits, dim=-1).unsqueeze(0) # [batch, seq_len]
-            print(f"Input tensor after sampling: {next_tokens}") 
+            print(f"Input tensor after sampling: {next_tokens}")
 
             input_with_mask_tensor[:,-(self.num_masks-1):] = next_tokens
-            print(f"Predicted full tokens: {input_with_mask_tensor}") 
+            print(f"Predicted full tokens: {input_with_mask_tensor}")
 
 
         self.current_mtp_mask = None
@@ -354,10 +351,10 @@ class MultiTokenPredictionModel(nn.Module):
         # Ignore the last token and check if :-(model.num_mask-1) matches
         ntp_verification_tensor = next_token[:,:-1]
         verification_tensor1 = ntp_verification_tensor[:, -(self.num_masks-1):]
-        verification_tensor2 = input_with_mask_tensor[:,1:][:, -(self.num_masks-1):] 
+        verification_tensor2 = input_with_mask_tensor[:,1:][:, -(self.num_masks-1):]
         mismatch_mask = verification_tensor1 != verification_tensor2
-        print(f"Speculated tokens: {verification_tensor1}") 
-        print(f"Verification tokens: {verification_tensor2}") 
+        print(f"Speculated tokens: {verification_tensor1}")
+        print(f"Verification tokens: {verification_tensor2}")
         print(f"Mismatch mask:  {mismatch_mask}")
         if mismatch_mask.any():
             first_mismatch_abs = torch.where(mismatch_mask)[1][0] + verification_tensor1.shape[1] - (self.num_masks - 1)
@@ -366,7 +363,4 @@ class MultiTokenPredictionModel(nn.Module):
             n_steps = input_with_mask_tensor.shape[1] - start_pos - 1
             return self.autoregressive_decoding(input_with_mask_tensor[:, :(input_tensor.shape[1]+1+first_mismatch_abs)], n_steps)
         else:
-            return input_with_mask_tensor  
-        
-
-
+            return input_with_mask_tensor
