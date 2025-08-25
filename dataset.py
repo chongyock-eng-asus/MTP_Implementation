@@ -85,3 +85,13 @@ class MultiTokenPredictionDataset(Dataset):
         mtp_mask = torch.tensor(mtp_mask, dtype=torch.bool)
 
         return input_id, position_id, labels, mtp_mask
+
+def get_ds(config):
+    ds = load_dataset(config["datasource"], split=f"train[:{config['dataset_size']}]", token=config["API_KEY"])
+    texts = []
+    for example in ds:
+          messages = example['messages']
+          text_parts = [f"{msg['role']}: {msg['content']}" for msg in messages]
+          full_text = "\n".join(text_parts)
+          texts.append(full_text)
+    return texts
