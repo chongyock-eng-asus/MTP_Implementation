@@ -21,7 +21,7 @@ class MultiTokenPredictionDataset(Dataset):
 
     def __len__(self):
         return len(self.ds)
-    
+
     def __getitem__(self, idx):
 
         input_sentence = self.ds[idx]
@@ -40,15 +40,29 @@ class MultiTokenPredictionDataset(Dataset):
         labels = []
         mtp_mask = []
 
-        for i in range(len(sequence)):  
+        for i in range(len(sequence)):
+            # Add original token
             input_id.append(sequence[i])
+
+            # Add mask tokens
             input_id += self.mask_token_ids
-            position_id.extend([i for i in range(i, i+self.num_mask+1)])
-            labels.extend([
-                sequence[i+1+j] if i+1+j < len(sequence) else -100 
-                for j in range(self.num_mask+1)
-            ])
-            mtp_mask.extend([False]+self.num_mask*[True])
+
+            # Position IDs: original token gets position i, masks get i+1, i+2, etc.
+            position_id.extend([i] + [i+1+j for j in range(self.num_mask)])
+
+            # Labels: original token predicts next token, masks predict future tokens
+            labels.append(sequence[i+1] if i+1 < len(sequence) else -100)  # Original token label
+
+            # Mask token labels: each mask predicts a future token
+            for j in range(self.num_mask):
+                future_idx = i + 1 + j + 1
+                if future_idx < len(sequence):
+                    labels.append(sequence[future_idx])
+                else:
+                    labels.append(-100)
+
+            # MTP mask: original token = False, mask tokens = True
+            mtp_mask.extend([False] + [True] * self.num_mask)
 
         # Truncate if too long
         if len(input_id) > self.max_length:
@@ -56,7 +70,7 @@ class MultiTokenPredictionDataset(Dataset):
             position_id = position_id[:self.max_length]
             labels = labels[:self.max_length]
             mtp_mask = mtp_mask[:self.max_length]
-    
+
         # Pad if shorter than max_length
         pad_len = self.max_length - len(input_id)
         if pad_len > 0:
@@ -69,15 +83,5 @@ class MultiTokenPredictionDataset(Dataset):
         position_id = torch.tensor(position_id, dtype=torch.long)
         labels = torch.tensor(labels, dtype=torch.long)
         mtp_mask = torch.tensor(mtp_mask, dtype=torch.bool)
-        
+
         return input_id, position_id, labels, mtp_mask
-    
-def get_ds(config):
-    ds = load_dataset(config["datasource"], split=f"train[:{config['dataset_size']}]", token=config["API_KEY"])
-    texts = []
-    for example in ds:
-          messages = example['messages']
-          text_parts = [f"{msg['role']}: {msg['content']}" for msg in messages]
-          full_text = "\n".join(text_parts)
-          texts.append(full_text)
-    return texts
