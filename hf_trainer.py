@@ -247,6 +247,7 @@ def train_model(model, tokenizer, train_data, eval_data=None, output_dir="./mtp_
         greater_is_better=False,
         dataloader_num_workers=0,  # Set to 0 to avoid multiprocessing issues
         remove_unused_columns=False,  # Important for custom inputs
+        save_safetensors=False,
     )
     
     # Create trainer
