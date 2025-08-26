@@ -260,7 +260,13 @@ def train_model(model, tokenizer, train_data, eval_data=None, output_dir="./mtp_
     return trainer
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api_key", type=str, required=True, help="Hugging Face API key")
+    args = parser.parse_args()
     config_dict = get_config()
+    config_dict["API_KEY"] = args.api_key
+    
     ds = get_ds(config_dict)
     model, tokenizer, config = setup_model_and_tokenizer(config_dict, tokenizer_name_or_path=config_dict['model_basename'])
     trainer = train_model(model, tokenizer, ds)
