@@ -304,8 +304,8 @@ class MultiTokenPredictionModel(nn.Module):
         input_with_mask_tensor = torch.concat([input_tensor, masked_token_tensor],dim=-1)
         print(f"Input tensor with mask: {input_with_mask_tensor}")
 
-        mtp_mask = torch.concat([torch.zeros(input_tensor.shape[0], input_tensor.shape[1] + 1, device=device),
-                        torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1] - 1, device=device)], dim=-1).bool()
+        mtp_mask = torch.concat([torch.zeros(input_tensor.shape[0], input_tensor.shape[1], device=device),
+                        torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1], device=device)], dim=-1).bool()
         print(f"MTP mask: {mtp_mask}")
 
         self.current_mtp_mask = mtp_mask # [batch, seq_len]
