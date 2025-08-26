@@ -11,6 +11,7 @@ from dataset import MultiTokenPredictionDataset, get_ds
 from model import MultiTokenPredictionModel
 from utils import get_tokenizer, test_hypothesis
 from config import get_config
+import argparse
 
 class MultiTokenPredictionConfig(PretrainedConfig):
     model_type = "multi_token_prediction"
