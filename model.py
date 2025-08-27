@@ -233,7 +233,7 @@ class MultiTokenPredictionModel(nn.Module):
 
                     for item in target_idx:
                         prev_representation = hidden_state[0][item]
-                        lcm_loss += (ntp_representation-prev_representation)**2
+                        lcm_loss += torch.mean((ntp_representation - prev_representation) ** 2)
                     total_lcm_loss += lcm_loss/length_set
 
         return total_lcm_loss/len(true_positions)
