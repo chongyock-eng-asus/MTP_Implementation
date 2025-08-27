@@ -26,18 +26,11 @@ class GatedLoRALinear(nn.Module):
         for param in self.base_layer.parameters():
             param.requires_grad = False
 
-    def forward(self, x: torch.Tensor, mtp_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Base transformation
         base_output = self.base_layer(x)
 
-        if mtp_mask is None:
-            return base_output
-
-        # LoRA transformation
-        lora_output = self.dropout(x) @ self.lora_A.T @ self.lora_B.T * self.scaling
-        gated_output = torch.where(mtp_mask.unsqueeze(-1), base_output + lora_output, base_output)
-
-        return gated_output
+        return base_output
 
 
 class SamplerHead(nn.Module):
@@ -128,10 +121,16 @@ class MultiTokenPredictionModel(nn.Module):
         Permanent hook function - gets called for EVERY forward pass
         The current_mtp_mask changes for each batch!
         """
-        if self.current_mtp_mask is not None:
-            x = input[0]
-            return module.forward(x, mtp_mask=self.current_mtp_mask)
-        return output
+        x = input[0]
+        base_output = output
+        
+        if self.current_mtp_mask is None:
+            return base_output
+
+        lora_output = module.dropout(x) @ module.lora_A.T @ module.lora_B.T * module.scaling
+        mask_expanded = self.current_mtp_mask.unsqueeze(-1)
+        gated_output = torch.where(mask_expanded, base_output + lora_output, base_output)
+        return gated_output
 
     def _register_permanent_hooks(self):
         """Register hooks once during initialization"""
