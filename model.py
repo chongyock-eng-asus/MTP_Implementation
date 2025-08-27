@@ -20,7 +20,7 @@ class GatedLoRALinear(nn.Module):
         # LoRA parameters
         device = base_layer.weight.device 
         self.lora_A = nn.Parameter(torch.randn(rank, base_layer.in_features, device=device) * 0.01) # [rank, in_features]
-        self.lora_B = nn.Parameter(torch.randn(base_layer.out_features, device=device, rank) * 0.01) # [out_features, rank]
+        self.lora_B = nn.Parameter(torch.randn(base_layer.out_features, rank, device=device) * 0.01) # [out_features, rank]
         self.dropout = nn.Dropout(dropout)
 
         # Freeze base layer
