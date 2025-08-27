@@ -219,7 +219,7 @@ class MultiTokenPredictionModel(nn.Module):
 
     def _calculate_lcm_loss(self, position_mask:torch.Tensor, hidden_state:torch.Tensor, mtp_mask:torch.Tensor):
         true_positions = torch.where(~mtp_mask)[1]
-        total_lcm_loss = 0
+        total_lcm_loss = torch.tensor(0.0, device=self.base_model.device)
         for i in true_positions:
             if i !=0:
                 current_ntp_pos = i.item()
@@ -236,7 +236,7 @@ class MultiTokenPredictionModel(nn.Module):
                         lcm_loss += (ntp_representation-prev_representation)**2
                     total_lcm_loss += lcm_loss/length_set
 
-        return total_lcm_loss.mean()
+        return total_lcm_loss/len(true_positions)
 
     def get_trainable_parameters(self):
         """Get all trainable parameters"""
