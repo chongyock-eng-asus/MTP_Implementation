@@ -195,25 +195,22 @@ class MultiTokenPredictionModel(nn.Module):
 
 
     def _calculate_sampler_loss(self, input_ids:torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels:torch.Tensor):
-        # Get embeddings for input tokens
+        
         embedding = self.base_model.get_input_embeddings()
-        shifted_labels_ids = torch.cat([torch.zeros_like(labels[:, :1]), labels[:, :-1]], dim=1)
-        shifted_labels_ids = torch.where(shifted_labels_ids == -100, self.tokenizer.eos_token_id, shifted_labels_ids)
-        prev_embeddings = embedding(shifted_labels_ids)
-        
-        mtp_hidden_masked = hidden_state[mtp_mask]       # masked positions only
-        mtp_prev_emb_masked = prev_embeddings[mtp_mask]  # masked positions only
-        
-        mtp_sampler_logits = self.sampler_head(mtp_hidden_masked, mtp_prev_emb_masked)  # [num_masked_tokens, vocab_size]
-        
-        mtp_labels = labels[mtp_mask]  # [num_masked_tokens]
-        
-        sampler_loss = F.cross_entropy(
-            mtp_sampler_logits,  # [num_masked_tokens, vocab_size]
-            mtp_labels,          # [num_masked_tokens]
-            ignore_index=-100
-        )
-
+        shifted_labels_ids = torch.cat([torch.full_like(labels[:, :1], -100), labels[:, :-1]], dim=1)
+            
+        # Get indices where shifted_labels_ids != -100 AND position is masked
+        valid_mask = (shifted_labels_ids != -100) & mtp_mask
+        if valid_mask.sum() == 0:
+            return torch.tensor(0.0, device=hidden_state.device, requires_grad=True)
+            
+        valid_shifted_labels = shifted_labels_ids[valid_mask]  # Only valid token IDs
+        valid_hidden = hidden_state[valid_mask]
+        valid_labels = labels[valid_mask]
+            
+        valid_prev_embeddings = embedding(valid_shifted_labels)
+        sampler_logits = self.sampler_head(valid_hidden, valid_prev_embeddings)
+        sampler_loss = F.cross_entropy(sampler_logits, valid_labels)
         
         return sampler_loss
 
