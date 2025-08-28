@@ -93,9 +93,6 @@ class MultiTokenPredictionModel(nn.Module):
             len(self.tokenizer)  # Account for new mask tokens
         )
 
-        # Share embedding weights with sampler head output projection
-        self.sampler_head.output_projection.weight = self.base_model.lm_head.weight
-
         # Freeze base model parameters
         for param in self.base_model.parameters():
             param.requires_grad = False
