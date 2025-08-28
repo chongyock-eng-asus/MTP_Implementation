@@ -2,7 +2,7 @@ def get_config():
     return {
         "batch_size": 8,
         "num_epochs": 1,
-        "lr": 10**-4,
+        "lr": 20**-4,
         "model_basename": "meta-llama/Llama-3.2-1B",
         "num_masks": 8,
         "max_length": 256,
