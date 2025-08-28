@@ -197,7 +197,7 @@ class MultiTokenPredictionModel(nn.Module):
     def _calculate_sampler_loss(self, input_ids:torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels:torch.Tensor):
         # Get embeddings for input tokens
         embedding = self.base_model.get_input_embeddings()
-        shifted_labels_ids = torch.cat([torch.full_like(labels[:, :1], self.tokenizer.eos_token_id), labels[:, :-1]], dim=1)
+        shifted_labels_ids = torch.cat([torch.zeros_like(labels[:, :1]), labels[:, :-1]], dim=1)
         shifted_labels_ids = torch.where(shifted_labels_ids == -100, self.tokenizer.eos_token_id, shifted_labels_ids)
         prev_embeddings = embedding(shifted_labels_ids)
         
