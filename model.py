@@ -202,7 +202,7 @@ class MultiTokenPredictionModel(nn.Module):
         prev_embeddings = embedding(shifted_labels_ids)
 
         mtp_mask_expanded = mtp_mask.unsqueeze(-1)  # (batch_size, seq_len, 1)
-        mtp_hidden = hidden_states * mtp_mask_expanded  # zeros out positions not in mask, keeps shape
+        mtp_hidden = hidden_state * mtp_mask_expanded  # zeros out positions not in mask, keeps shape
         mtp_prev_emb = prev_embeddings * mtp_mask_expanded
         mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb) # [num_mtp_tokens, vocab_size]
         mtp_labels = labels[mtp_positions] # [num_mtp_tokens]
