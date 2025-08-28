@@ -205,7 +205,7 @@ class MultiTokenPredictionModel(nn.Module):
         mtp_hidden = hidden_state * mtp_mask_expanded  # zeros out positions not in mask, keeps shape
         mtp_prev_emb = prev_embeddings * mtp_mask_expanded
         mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb) # [num_mtp_tokens, vocab_size]
-        mtp_labels = labels[mtp_positions] # [num_mtp_tokens]
+        mtp_labels = labels[mtp_mask] # [num_mtp_tokens]
 
         sampler_loss =  F.cross_entropy(
                 mtp_sampler_logits, # [num_mtp_tokens, vocab_size]
