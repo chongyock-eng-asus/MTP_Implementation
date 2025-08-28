@@ -196,22 +196,25 @@ class MultiTokenPredictionModel(nn.Module):
 
     def _calculate_sampler_loss(self, input_ids:torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels:torch.Tensor):
         # Get embeddings for input tokens
-        embedding = self.base_model.get_input_embeddings()
-        shifted_labels_ids = torch.cat([torch.full_like(labels[:, :1], self.tokenizer.eos_token_id),labels[:, :-1]], dim=1)
-        shifted_labels_ids = torch.where(shifted_labels_ids == -100, self.tokenizer.eos_token_id, shifted_labels_ids)
+        embedding = model.mtp_model.base_model.get_input_embeddings()
+        shifted_labels_ids = torch.cat([torch.full_like(labels[:, :1], model.mtp_model.tokenizer.eos_token_id), labels[:, :-1]], dim=1)
+        shifted_labels_ids = torch.where(shifted_labels_ids == -100, model.mtp_model.tokenizer.eos_token_id, shifted_labels_ids)
         prev_embeddings = embedding(shifted_labels_ids)
+        
+        mtp_hidden_masked = hidden_state[mtp_mask]       # masked positions only
+        mtp_prev_emb_masked = prev_embeddings[mtp_mask]  # masked positions only
+        
+        mtp_sampler_logits = model.mtp_model.sampler_head(mtp_hidden_masked, mtp_prev_emb_masked)  # [num_masked_tokens, vocab_size]
+        
+        mtp_labels = labels[mtp_mask]  # [num_masked_tokens]
+        
+        sampler_loss = F.cross_entropy(
+            mtp_sampler_logits,  # [num_masked_tokens, vocab_size]
+            mtp_labels,          # [num_masked_tokens]
+            ignore_index=-100
+        )
 
-        mtp_mask_expanded = mtp_mask.unsqueeze(-1)  # (batch_size, seq_len, 1)
-        mtp_hidden = hidden_state * mtp_mask_expanded  # zeros out positions not in mask, keeps shape
-        mtp_prev_emb = prev_embeddings * mtp_mask_expanded
-        mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb) # [num_mtp_tokens, vocab_size]
-        mtp_labels = labels[mtp_mask] # [num_mtp_tokens]
-
-        sampler_loss =  F.cross_entropy(
-                mtp_sampler_logits, # [num_mtp_tokens, vocab_size]
-                mtp_labels,  # [num_mtp_tokens]
-                ignore_index=-100)
-
+        
         return sampler_loss
 
     def _calculate_lcm_loss(self, position_mask: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor):
