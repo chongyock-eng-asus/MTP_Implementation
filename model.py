@@ -187,11 +187,9 @@ class MultiTokenPredictionModel(nn.Module):
             }
 
     def _calculate_base_loss(self, logits: torch.Tensor, labels:torch.Tensor, mtp_mask: torch.Tensor):
-        masked_labels = labels.clone()
-        # masked_labels[~mtp_mask] = -100
         base_loss = F.cross_entropy(
         logits.view(-1, self.vocab_size), # [batch * seq_len, vocab_size]
-        masked_labels.view(-1), # [seq_len]
+        labels.view(-1), # [seq_len]
         ignore_index=-100)
         return base_loss
 
