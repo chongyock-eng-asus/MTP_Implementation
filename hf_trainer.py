@@ -231,17 +231,17 @@ def train_model(model, tokenizer, train_data, eval_data=None, output_dir="./mtp_
     # Training arguments
     training_args = TrainingArguments(
         output_dir=output_dir,
-        num_train_epochs=3,
+        num_train_epochs=1,
         per_device_train_batch_size=1,  # Adjust based on your memory
         per_device_eval_batch_size=4,
-        warmup_steps=100,
+        warmup_steps=5000,
         weight_decay=0.01,
         logging_dir=f"{output_dir}/logs",
         logging_steps=50,
         eval_strategy="steps" if eval_dataset else "no",
         eval_steps=200 if eval_dataset else None,
-        save_steps=2000,
-        save_total_limit=1,
+        save_steps=5000,
+        save_total_limit=2,
         load_best_model_at_end=True if eval_dataset else False,
         metric_for_best_model="eval_loss" if eval_dataset else None,
         greater_is_better=False,
