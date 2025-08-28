@@ -204,7 +204,7 @@ class MultiTokenPredictionModel(nn.Module):
         mtp_hidden_masked = hidden_state[mtp_mask]       # masked positions only
         mtp_prev_emb_masked = prev_embeddings[mtp_mask]  # masked positions only
         
-        mtp_sampler_logits = model.mtp_model.sampler_head(mtp_hidden_masked, mtp_prev_emb_masked)  # [num_masked_tokens, vocab_size]
+        mtp_sampler_logits = self.sampler_head(mtp_hidden_masked, mtp_prev_emb_masked)  # [num_masked_tokens, vocab_size]
         
         mtp_labels = labels[mtp_mask]  # [num_masked_tokens]
         
