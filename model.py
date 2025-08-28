@@ -241,8 +241,8 @@ class MultiTokenPredictionModel(nn.Module):
         final_mask = same_position & valid_pairs & before_mask  # (B, L, L)
     
         # Expand hidden states for i and j comparisons
-        hi = hi.detach()
         hi = hidden_state.unsqueeze(2).expand(-1, L, L, -1)  # (B, L, L, H)
+        hi = hi.detach()
         hj = hidden_state.unsqueeze(1).expand(-1, L, L, -1)  # (B, L, L, H)
     
         # Compute squared difference
