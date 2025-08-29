@@ -337,7 +337,7 @@ class MultiTokenPredictionModel(nn.Module):
         self.current_mtp_mask = mtp_mask
         
         with torch.no_grad():
-          outputs = model_5k.mtp_model.base_model(
+          outputs = self.base_model(
               input_ids=input_with_mask_tensor,
               output_hidden_states=True,
               use_cache=False
@@ -348,7 +348,7 @@ class MultiTokenPredictionModel(nn.Module):
           prev_token = output_tokens[:, current_ntp_idx].unsqueeze(0)
 
           current_mtp_idx = current_ntp_idx + 2
-          embedding = model_5k.mtp_model.base_model.get_input_embeddings()
+          embedding = self.base_model.get_input_embeddings()
           
           for i in range(model_5k.mtp_model.num_masks - 1):
               
@@ -359,7 +359,7 @@ class MultiTokenPredictionModel(nn.Module):
               prev_emb = embedding(last_token)  # Shape: [batch_size, embed_dim]
               
               # Use sampler head for prediction
-              sampler_logits = model_5k.mtp_model.sampler_head(mtp_hidden, prev_emb)
+              sampler_logits = self.sampler_head(mtp_hidden, prev_emb)
               next_token = torch.argmax(sampler_logits, dim=-1, keepdim=True)  # Shape: [batch_size, 1]
               
               # Update the mask tensor
