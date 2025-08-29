@@ -105,7 +105,7 @@ class MultiTokenPredictionDataset(Dataset):
 
         return input_id, position_id, labels, mtp_mask
 
-def get_ds(config, tokenizer):
+def get_ds(config):
     # Load the dataset
     ds = load_dataset(config["datasource"], split=f"train[:{config['dataset_size']}]", token=config["API_KEY"])
     return ds
