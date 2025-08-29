@@ -196,20 +196,11 @@ class MultiTokenPredictionTrainer(Trainer):
         # Get loss from outputs
         loss = outputs.loss
 
-        # Log additional losses if available
-        if hasattr(outputs, "base_loss") or hasattr(outputs, "sampler_loss") or hasattr(outputs, "lcm_loss"):
-            log_dict = {}
-            if "base_loss" in outputs:
-                log_dict["train/base_loss"] = outputs["base_loss"].item()
-            if "sampler_loss" in outputs:
-                log_dict["train/sampler_loss"] = outputs["sampler_loss"].item()
-            if "lcm_loss" in outputs:
-                log_dict["train/lcm_loss"] = outputs["lcm_loss"].item()
-            
-            # Log to wandb
-            if log_dict:
-                import wandb
-                wandb.log(log_dict)
+        self.log({
+            "train/base_loss": outputs["base_loss"].detach().cpu().item(),
+            "train/sampler_loss": outputs["sampler_loss"].detach().cpu().item(),
+            "train/lcm_loss": outputs["lcm_loss"].detach().cpu().item(),
+        })
                 
         return (loss, outputs) if return_outputs else loss
 
