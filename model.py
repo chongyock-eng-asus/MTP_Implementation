@@ -195,32 +195,34 @@ class MultiTokenPredictionModel(nn.Module):
 
 
     def _calculate_sampler_loss(self, input_ids: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels: torch.Tensor):
+        
         embedding = self.base_model.get_input_embeddings()
         
-        # Only compute sampler loss on MTP positions (not the first position)
-        # We need previous token + current hidden state -> current token
-        mtp_positions = mtp_mask[:, 1:]  # Skip first position (no previous token)
+        # Shift everything by 1 position
+        # We want to predict position i using information from position i-1
+        prev_tokens = input_ids[:, :-1]           # tokens at positions [0, 1, 2, ..., seq_len-2]
+        current_hidden = hidden_state[:, 1:]      # hidden states at positions [1, 2, 3, ..., seq_len-1]  
+        current_targets = labels[:, 1:]           # targets at positions [1, 2, 3, ..., seq_len-1]
+        mtp_positions = mtp_mask[:, 1:]           # MTP mask at positions [1, 2, 3, ..., seq_len-1]
         
+        # Filter to only MTP positions
         if mtp_positions.sum() == 0:
             return torch.tensor(0.0, device=hidden_state.device, requires_grad=True)
         
-        # Get the previous tokens for MTP positions
-        prev_tokens = input_ids[:, :-1]  # Previous tokens for each position
-        current_hidden = hidden_state[:, 1:]  # Current hidden states
-        current_targets = labels[:, 1:]  # Current targets to predict
-        
-        # Filter for MTP positions only
-        valid_prev_tokens = prev_tokens[mtp_positions]
-        valid_current_hidden = current_hidden[mtp_positions]
-        valid_targets = current_targets[mtp_positions]
+        # Get valid MTP positions
+        valid_prev_tokens = prev_tokens[mtp_positions]      # Previous tokens for MTP positions
+        valid_current_hidden = current_hidden[mtp_positions] # Current hidden states for MTP positions  
+        valid_targets = current_targets[mtp_positions]       # Current targets for MTP positions
         
         # Get embeddings of previous tokens
         prev_embeddings = embedding(valid_prev_tokens)
         
         # Sampler prediction: prev_token_embedding + current_hidden -> current_token
         sampler_logits = self.sampler_head(valid_current_hidden, prev_embeddings)
-        sampler_loss = F.cross_entropy(sampler_logits, valid_targets)
         
+        # Cross entropy loss
+        sampler_loss = F.cross_entropy(sampler_logits, valid_targets, ignore_index=-100)
+    
         return sampler_loss
 
     def _calculate_lcm_loss(self, position_mask: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor):
