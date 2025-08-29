@@ -105,13 +105,13 @@ class MultiTokenPredictionDataset(Dataset):
 
         return input_id, position_id, labels, mtp_mask
 
-def get_ds(api_key, num_samples=10000, validation_split=0.1):
+def get_ds(config, num_samples=10000, validation_split=0.1):
         """Load dataset and split into train/validation"""
         
         # Load subset
         ds = load_dataset(
             "mlfoundations-dev/oh-dcft-v3.1-llama-3.2-1b", 
-            token=api_key,
+            token=config["API_KEY"],
             split=f"train[:{num_samples}]"
         )
         
