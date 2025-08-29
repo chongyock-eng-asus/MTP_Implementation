@@ -337,33 +337,39 @@ class MultiTokenPredictionModel(nn.Module):
         self.current_mtp_mask = mtp_mask
         
         with torch.no_grad():
-            outputs = self.base_model(
-                input_ids=input_with_mask_tensor,
-                output_hidden_states=True,
-                use_cache=False
-            )
-            hidden_states = outputs.hidden_states[-1]
-            embedding = self.base_model.get_input_embeddings()
-            
-            # Use SAMPLER HEAD for ALL MTP positions
-            current_mtp_idx = input_tensor.shape[1]
-            
-            # For the first MTP position, use the last NTP token as "previous"
-            prev_token = input_tensor[:, -1:] if input_tensor.shape[1] > 0 else input_tensor[:, :1]
-            
-            for i in range(self.num_masks):
-                mtp_hidden = hidden_states[:, current_mtp_idx, :]
-                prev_emb = embedding(prev_token.squeeze(1))
-                
-                # Use sampler head for prediction
-                sampler_logits = self.sampler_head(mtp_hidden, prev_emb)
-                next_token = torch.argmax(sampler_logits, dim=-1, keepdim=True)
-                
-                input_with_mask_tensor[:, current_mtp_idx] = next_token.squeeze(1)
-                
-                # Update for next iteration
-                prev_token = next_token
-                current_mtp_idx += 1
+          outputs = model_5k.mtp_model.base_model(
+              input_ids=input_with_mask_tensor,
+              output_hidden_states=True,
+              use_cache=False
+          )
+          hidden_states = outputs.hidden_states[-1]
+          current_ntp_idx = input_tensor.shape[1] - 1 
+          output_tokens = torch.argmax(outputs.logits, dim=-1)
+          prev_token = output_tokens[:, current_ntp_idx].unsqueeze(0)
+
+          current_mtp_idx = current_ntp_idx + 2
+          embedding = model_5k.mtp_model.base_model.get_input_embeddings()
+          
+          for i in range(model_5k.mtp_model.num_masks - 1):
+              
+              mtp_hidden = hidden_states[:, current_mtp_idx, :]
+
+              # Use the last token in prev_token for embedding
+              last_token = prev_token[:, -1]  # Shape: [batch_size]
+              prev_emb = embedding(last_token)  # Shape: [batch_size, embed_dim]
+              
+              # Use sampler head for prediction
+              sampler_logits = model_5k.mtp_model.sampler_head(mtp_hidden, prev_emb)
+              next_token = torch.argmax(sampler_logits, dim=-1, keepdim=True)  # Shape: [batch_size, 1]
+              
+              # Update the mask tensor
+              input_with_mask_tensor[:, current_mtp_idx] = next_token.squeeze(1)
+              
+              # Append the new token to prev_token (keep accumulating)
+              prev_token = torch.cat([prev_token, next_token], dim=1)  # Shape: [batch_size, seq_len + i + 1]
+              
+              # Update for next iteration
+              current_mtp_idx += 1
         
         self.current_mtp_mask = None
 
