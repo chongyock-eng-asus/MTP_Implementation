@@ -194,25 +194,34 @@ class MultiTokenPredictionModel(nn.Module):
         return base_loss
 
 
-    def _calculate_sampler_loss(self, input_ids:torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels:torch.Tensor):
-        
+    def _calculate_sampler_loss(self, input_ids: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor, labels: torch.Tensor):
         embedding = self.base_model.get_input_embeddings()
-        shifted_labels_ids = torch.cat([torch.full_like(labels[:, :1], -100), labels[:, :-1]], dim=1)
-            
-        # Get indices where shifted_labels_ids != -100 AND position is masked
-        valid_mask = (shifted_labels_ids != -100) & mtp_mask
-        if valid_mask.sum() == 0:
-            return torch.tensor(0.0, device=hidden_state.device, requires_grad=True)
-            
-        valid_shifted_labels = shifted_labels_ids[valid_mask]  # Only valid token IDs
-        valid_hidden = hidden_state[valid_mask]
-        valid_labels = labels[valid_mask]
-            
-        valid_prev_embeddings = embedding(valid_shifted_labels)
-        sampler_logits = self.sampler_head(valid_hidden, valid_prev_embeddings)
-        sampler_loss = F.cross_entropy(sampler_logits, valid_labels)
         
-        return sampler_loss
+        # Only compute sampler loss on MTP positions (not the first position)
+        # We need previous token + current hidden state -> current token
+        mtp_positions = mtp_mask[:, 1:]  # Skip first position (no previous token)
+        
+        if mtp_positions.sum() == 0:
+            return torch.tensor(0.0, device=hidden_state.device, requires_grad=True)
+        
+        # Get the previous tokens for MTP positions
+        prev_tokens = input_ids[:, :-1]  # Previous tokens for each position
+        current_hidden = hidden_state[:, 1:]  # Current hidden states
+        current_targets = labels[:, 1:]  # Current targets to predict
+        
+        # Filter for MTP positions only
+        valid_prev_tokens = prev_tokens[mtp_positions]
+        valid_current_hidden = current_hidden[mtp_positions]
+        valid_targets = current_targets[mtp_positions]
+        
+        # Get embeddings of previous tokens
+        prev_embeddings = embedding(valid_prev_tokens)
+        
+        # Sampler prediction: prev_token_embedding + current_hidden -> current_token
+        sampler_logits = self.sampler_head(valid_current_hidden, prev_embeddings)
+        sampler_loss = F.cross_entropy(sampler_logits, valid_targets)
+        
+    return sampler_loss
 
     def _calculate_lcm_loss(self, position_mask: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor):
         # Shapes
@@ -314,47 +323,46 @@ class MultiTokenPredictionModel(nn.Module):
     def speculative_decoding(self, input_tensor:torch.tensor):
 
         device = input_tensor.device
-        print(f"Input tensor:   {input_tensor}")
         masked_token_ids = self.tokenizer.custom_mask_token_ids
         masked_token_tensor = torch.tensor(masked_token_ids).unsqueeze(0).to(device)
-        current_mtp_idx = input_tensor.shape[1]
-
-        input_with_mask_tensor = torch.concat([input_tensor, masked_token_tensor],dim=-1)
-        print(f"Input tensor with mask: {input_with_mask_tensor}")
-
-        mtp_mask = torch.concat([torch.zeros(input_tensor.shape[0], input_tensor.shape[1], device=device),
-                        torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1], device=device)], dim=-1).bool()
-        print(f"MTP mask: {mtp_mask}")
-
-        self.current_mtp_mask = mtp_mask # [batch, seq_len]
+        
+        input_with_mask_tensor = torch.concat([input_tensor, masked_token_tensor], dim=-1)
+        mtp_mask = torch.concat([
+            torch.zeros(input_tensor.shape[0], input_tensor.shape[1], device=device),
+            torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1], device=device)
+        ], dim=-1).bool()
+        
+        self.current_mtp_mask = mtp_mask
+        
         with torch.no_grad():
             outputs = self.base_model(
-                    input_ids=input_with_mask_tensor,
-                    output_hidden_states=True,
-                    use_cache=False
-                )
+                input_ids=input_with_mask_tensor,
+                output_hidden_states=True,
+                use_cache=False
+            )
             hidden_states = outputs.hidden_states[-1]
             embedding = self.base_model.get_input_embeddings()
-
-            # Sample first masked token
+            
+            # Use SAMPLER HEAD for ALL MTP positions
             current_mtp_idx = input_tensor.shape[1]
-            next_token = torch.argmax(outputs.logits[:, current_mtp_idx, :], dim=-1, keepdim=True)
-            input_with_mask_tensor[:, current_mtp_idx] = next_token.squeeze(1)
-            prev_sampled_token = next_token
-        
-            print(f"Predicted token {current_mtp_idx}: {next_token}")
-        
-            # Iteratively sample remaining masked tokens
-            for i in range(1, self.num_masks):
-                current_mtp_idx += 1
-                mtp_prev_emb = embedding(prev_sampled_token.squeeze(1))
+            
+            # For the first MTP position, use the last NTP token as "previous"
+            prev_token = input_tensor[:, -1:] if input_tensor.shape[1] > 0 else input_tensor[:, :1]
+            
+            for i in range(self.num_masks):
                 mtp_hidden = hidden_states[:, current_mtp_idx, :]
-                mtp_sampler_logits = self.sampler_head(mtp_hidden, mtp_prev_emb)
+                prev_emb = embedding(prev_token.squeeze(1))
+                
+                # Use sampler head for prediction
+                sampler_logits = self.sampler_head(mtp_hidden, prev_emb)
+                next_token = torch.argmax(sampler_logits, dim=-1, keepdim=True)
+                
+                input_with_mask_tensor[:, current_mtp_idx] = next_token.squeeze(1)
+                
+                # Update for next iteration
+                prev_token = next_token
+                current_mtp_idx += 1
         
-                next_sampled_token = torch.argmax(mtp_sampler_logits, dim=-1, keepdim=True)
-                input_with_mask_tensor[:, current_mtp_idx] = next_sampled_token.squeeze(1)
-                prev_sampled_token = next_sampled_token
-
         self.current_mtp_mask = None
 
         # Verification process
