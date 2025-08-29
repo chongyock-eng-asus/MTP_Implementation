@@ -346,7 +346,7 @@ class MultiTokenPredictionModel(nn.Module):
           current_ntp_idx = input_tensor.shape[1] - 1 
           output_tokens = torch.argmax(outputs.logits, dim=-1)
           prev_token = output_tokens[:, current_ntp_idx].unsqueeze(0)
-
+          input_with_mask_tensor[:, current_ntp_idx] = prev_token.squeeze(1)
           current_mtp_idx = current_ntp_idx + 2
           embedding = self.base_model.get_input_embeddings()
           
