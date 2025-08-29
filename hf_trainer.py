@@ -195,12 +195,6 @@ class MultiTokenPredictionTrainer(Trainer):
         
         # Get loss from outputs
         loss = outputs.loss
-
-        self.log({
-            "train/base_loss": outputs["base_loss"].detach().cpu().item(),
-            "train/sampler_loss": outputs["sampler_loss"].detach().cpu().item(),
-            "train/lcm_loss": outputs["lcm_loss"].detach().cpu().item(),
-        })
                 
         return (loss, outputs) if return_outputs else loss
 
