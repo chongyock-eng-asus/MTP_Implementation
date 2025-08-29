@@ -221,7 +221,7 @@ class MultiTokenPredictionModel(nn.Module):
         sampler_logits = self.sampler_head(valid_current_hidden, prev_embeddings)
         sampler_loss = F.cross_entropy(sampler_logits, valid_targets)
         
-    return sampler_loss
+        return sampler_loss
 
     def _calculate_lcm_loss(self, position_mask: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor):
         # Shapes
