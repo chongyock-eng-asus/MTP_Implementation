@@ -172,7 +172,7 @@ class MultiTokenPredictionModel(nn.Module):
         logits = outputs.logits
         hidden_state = outputs.hidden_states[-1]
 
-        base_loss = self._calculate_base_loss(logits, labels, mtp_mask)
+        base_loss = self._calculate_base_loss(logits, labels)
         sampler_loss = self._calculate_sampler_loss(input_ids, hidden_state, mtp_mask, labels)
         lcm_loss = self._calculate_lcm_loss(position_ids, hidden_state, mtp_mask)
         total_loss = base_loss + sampler_loss + lcm_loss
