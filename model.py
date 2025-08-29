@@ -350,7 +350,7 @@ class MultiTokenPredictionModel(nn.Module):
           current_mtp_idx = current_ntp_idx + 2
           embedding = self.base_model.get_input_embeddings()
           
-          for i in range(model_5k.mtp_model.num_masks - 1):
+          for i in range(self.num_masks - 1):
               
               mtp_hidden = hidden_states[:, current_mtp_idx, :]
 
