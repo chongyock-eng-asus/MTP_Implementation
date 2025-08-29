@@ -240,7 +240,7 @@ def train_model(model, tokenizer, train_data, eval_data=None, output_dir="./mtp_
         logging_steps=100,
         eval_strategy="steps" if eval_dataset else "no",
         eval_steps=200 if eval_dataset else None,
-        save_steps=2000,
+        save_steps=10000,
         save_total_limit=3,
         load_best_model_at_end=True if eval_dataset else False,
         metric_for_best_model="eval_loss" if eval_dataset else None,
