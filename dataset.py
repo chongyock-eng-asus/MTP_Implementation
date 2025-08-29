@@ -105,7 +105,28 @@ class MultiTokenPredictionDataset(Dataset):
 
         return input_id, position_id, labels, mtp_mask
 
-def get_ds(config):
-    # Load the dataset
-    ds = load_dataset(config["datasource"], split=f"train[:{config['dataset_size']}]", token=config["API_KEY"])
-    return ds
+def get_ds(api_key, num_samples=10000, validation_split=0.1):
+        """Load dataset and split into train/validation"""
+        
+        # Load subset
+        ds = load_dataset(
+            "mlfoundations-dev/oh-dcft-v3.1-llama-3.2-1b", 
+            token=api_key,
+            split=f"train[:{num_samples}]"
+        )
+        
+        # Split into train/validation
+        split_ds = ds.train_test_split(test_size=validation_split, seed=42)
+        
+        def convert_format(conversations):
+            converted = []
+            for msg in conversations:
+                role = "user" if msg['from'] == 'human' else "assistant"
+                converted.append({
+                    "role": role,
+                    "content": msg['value']
+                })
+            return converted
+        
+        split_ds.convert_format = convert_format
+        return split_ds['train'], split_ds['test']  # Returns train_ds, val_ds
