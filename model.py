@@ -169,7 +169,7 @@ class MultiTokenPredictionModel(nn.Module):
             input_ids=input_ids,
             output_hidden_states=True,
             use_cache=False,
-            attention_mask=attention_mask,
+            attention_mask=attention_mask.unsqueeze(1),
         )
         logits = outputs.logits
         hidden_state = outputs.hidden_states[-1]
