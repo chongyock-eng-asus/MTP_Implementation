@@ -235,47 +235,41 @@ class MultiTokenPredictionModel(nn.Module):
         return sampler_loss
 
     def _calculate_lcm_loss(self, position_mask: torch.Tensor, hidden_state: torch.Tensor, mtp_mask: torch.Tensor):
-        # Shapes
         B, L, H = hidden_state.shape
+        device = hidden_state.device
         
-        # Masked tokens are invalid: we invert mask for valid ones
-        valid_mask = ~mtp_mask  # shape: (B, L)
-    
-        # Expand position IDs and masks
-        pos_i = position_mask.unsqueeze(2)  # (B, L, 1)
-        pos_j = position_mask.unsqueeze(1)  # (B, 1, L)
-    
-        # Match positions: True where position IDs match
-        same_position = (pos_i == pos_j)  # shape: (B, L, L)
-    
-        # Only compare where both i and j are valid (not masked)
-        valid_i = valid_mask.unsqueeze(2)  # (B, L, 1)
-        valid_j = valid_mask.unsqueeze(1)  # (B, 1, L)
-        valid_pairs = valid_i & valid_j  # (B, L, L)
-    
-        # Only consider positions before current position (i > j)
-        idxs = torch.arange(L, device=hidden_state.device)
-        before_mask = idxs.view(1, 1, L) < idxs.view(1, L, 1)  # (1, L, L)
-    
-        # Combine all masks
-        final_mask = same_position & valid_pairs & before_mask  # (B, L, L)
-    
-        # Expand hidden states for i and j comparisons
-        hi = hidden_state.unsqueeze(2).expand(-1, L, L, -1)  # (B, L, L, H)
-        hi = hi.detach()
-        hj = hidden_state.unsqueeze(1).expand(-1, L, L, -1)  # (B, L, L, H)
-    
-        # Compute squared difference
-        mse = ((hi - hj) ** 2).mean(dim=-1)  # (B, L, L)
-    
-        # Mask out invalid positions
-        masked_mse = mse * final_mask  # (B, L, L)
-    
-        # Sum and normalize
-        total_loss = masked_mse.sum()
-        num_valid = final_mask.sum().clamp(min=1)  # avoid divide-by-zero
-
-        return total_loss / num_valid
+        total_loss = 0.0
+        total_pairs = 0
+        
+        for batch_idx in range(B):
+            # Find unique position IDs
+            unique_positions = torch.unique(position_mask[batch_idx])
+            
+            for pos_id in unique_positions:
+                # Get all sequence positions with this position ID
+                mask = (position_mask[batch_idx] == pos_id)
+                indices = mask.nonzero().flatten()
+                
+                if len(indices) <= 1:
+                    continue  # Need multiple tokens at same logical position
+                
+                # Last index is NTP (target), others are MTP (should match target)
+                ntp_idx = indices[-1]
+                mtp_indices = indices[:-1]
+                
+                # Get target hidden state (detached)
+                ntp_hidden = hidden_state[batch_idx, ntp_idx].detach()
+                
+                # Compare each MTP hidden state to the NTP target
+                for mtp_idx in mtp_indices:
+                    mtp_hidden = hidden_state[batch_idx, mtp_idx]
+                    total_loss += ((mtp_hidden - ntp_hidden) ** 2).mean()
+                    total_pairs += 1
+        
+        if total_pairs == 0:
+            return torch.tensor(0.0, device=device, requires_grad=True)
+        
+        return total_loss / total_pairs
 
     def get_trainable_parameters(self):
         """Get all trainable parameters"""
