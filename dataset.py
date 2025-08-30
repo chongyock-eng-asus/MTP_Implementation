@@ -30,7 +30,7 @@ class MultiTokenPredictionDataset(Dataset):
         
         seq_len = input_id.shape[0]
         actual_length = len(tokenized_input)
-        attn_bias = train_dataset._create_attention_bias_matrix(tokenized_input, mtp_mask, seq_len, actual_length)
+        attn_bias = self._create_attention_bias_matrix(tokenized_input, mtp_mask, seq_len, actual_length)
         return {
             'input_ids': input_id,
             'position_ids': position_id,
