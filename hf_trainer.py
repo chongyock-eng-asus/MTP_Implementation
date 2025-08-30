@@ -145,12 +145,12 @@ def setup_model_and_tokenizer(config_dict, tokenizer_name_or_path):
     
     return model, tokenizer, config
 
-def train_model(model, tokenizer, train_data, eval_data=None, output_dir="./mtp_model_output"):
+def train_model(model, tokenizer, train_data, config, eval_data=None, output_dir="./mtp_model_output"):
     """Train your model using HuggingFace Trainer"""
     
     # Create datasets
-    train_dataset = MultiTokenPredictionDataset(train_data, tokenizer, num_masks=model.config.num_masks)
-    eval_dataset = MultiTokenPredictionDataset(eval_data, tokenizer, num_masks=model.config.num_masks) if eval_data else None
+    train_dataset = MultiTokenPredictionDataset(train_data, tokenizer, config)
+    eval_dataset = MultiTokenPredictionDataset(eval_data, tokenizer, config) if eval_data else None
     
     # Training arguments
     training_args = TrainingArguments(
