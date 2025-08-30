@@ -7,7 +7,7 @@ from transformers import Trainer, TrainingArguments
 from torch.utils.data import Dataset, DataLoader, random_split
 from typing import Optional, Tuple, Dict, List,  Union
 from train import train_mtp_model
-from dataset import MultiTokenPredictionDataset, get_ds
+from dataset import MultiTokenPredictionDataset
 from model import MultiTokenPredictionModel
 from utils import get_tokenizer, test_hypothesis
 from config import get_config
