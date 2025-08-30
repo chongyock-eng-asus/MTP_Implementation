@@ -114,7 +114,7 @@ class MultiTokenPredictionTrainer(Trainer):
             mtp_mask=mtp_mask,
             position_ids=position_ids,
             labels=labels,
-            attention_bias=attention_bias
+            attention_mask=attention_bias
         )
         
         # Get loss from outputs
