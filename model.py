@@ -326,74 +326,73 @@ class MultiTokenPredictionModel(nn.Module):
 
         device = input_tensor.device
         masked_token_ids = self.tokenizer.custom_mask_token_ids
+        masked_token_ids = self.tokenizer.custom_mask_token_ids
         masked_token_tensor = torch.tensor(masked_token_ids).unsqueeze(0).to(device)
-        
+
         input_with_mask_tensor = torch.concat([input_tensor, masked_token_tensor], dim=-1)
         mtp_mask = torch.concat([
-            torch.zeros(input_tensor.shape[0], input_tensor.shape[1], device=device),
-            torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1], device=device)
-        ], dim=-1).bool()
-        
+                    torch.zeros(input_tensor.shape[0], input_tensor.shape[1], device=device),
+                    torch.ones(masked_token_tensor.shape[0], masked_token_tensor.shape[1], device=device)
+                ], dim=-1).bool()
+
         self.current_mtp_mask = mtp_mask
-        
-        with torch.no_grad():
-          outputs = self.base_model(
-              input_ids=input_with_mask_tensor,
-              output_hidden_states=True,
-              use_cache=False
-          )
-          hidden_states = outputs.hidden_states[-1]
-          current_ntp_idx = input_tensor.shape[1] - 1 
-          output_tokens = torch.argmax(outputs.logits, dim=-1)
-          prev_token = output_tokens[:, current_ntp_idx+1].unsqueeze(0)
-          input_with_mask_tensor[:, current_ntp_idx+1] = prev_token.squeeze(1)
-          current_mtp_idx = current_ntp_idx + 2
-          embedding = self.base_model.get_input_embeddings()
-          
-          for i in range(self.num_masks - 1):
-              
-              mtp_hidden = hidden_states[:, current_mtp_idx, :]
 
-              # Use the last token in prev_token for embedding
-              last_token = prev_token[:, -1]  # Shape: [batch_size]
-              prev_emb = embedding(last_token)  # Shape: [batch_size, embed_dim]
-              
-              # Use sampler head for prediction
-              sampler_logits = self.sampler_head(mtp_hidden, prev_emb)
-              next_token = torch.argmax(sampler_logits, dim=-1, keepdim=True)  # Shape: [batch_size, 1]
-              
-              # Update the mask tensor
-              input_with_mask_tensor[:, current_mtp_idx] = next_token.squeeze(1)
-              
-              # Append the new token to prev_token (keep accumulating)
-              prev_token = torch.cat([prev_token, next_token], dim=1)  # Shape: [batch_size, seq_len + i + 1]
-              
-              # Update for next iteration
-              current_mtp_idx += 1
-        
-        self.current_mtp_mask = None
-
-        # Verification process
         with torch.no_grad():
-            outputs = self.base_model(
-                    input_ids=input_with_mask_tensor,
-                    output_hidden_states=False,
-                    use_cache=False
-                )
-        next_token = torch.argmax(outputs.logits, dim=-1)
-        # Ignore the last token and check if :-(model.num_mask-1) matches
-        ntp_verification_tensor = next_token[:,:-1]
-        verification_tensor1 = ntp_verification_tensor[:, -(self.num_masks-1):]
-        verification_tensor2 = input_with_mask_tensor[:,1:][:, -(self.num_masks-1):]
-        mismatch_mask = verification_tensor1 != verification_tensor2
-        print(f"Speculated tokens: {verification_tensor1}")
-        print(f"Verification tokens: {verification_tensor2}")
-        print(f"Mismatch mask:  {mismatch_mask}")
-        if mismatch_mask.any():
-            first_mismatch_abs = torch.where(mismatch_mask)[1][0] + verification_tensor1.shape[1] - (self.num_masks - 1)
-            print(f'Speculated {first_mismatch_abs} token successfully')
-            start_pos = input_tensor.shape[1] + first_mismatch_abs
-            n_steps = input_with_mask_tensor.shape[1] - start_pos - 1
-            return self.autoregressive_decoding(input_with_mask_tensor[:, :(input_tensor.shape[1]+1+first_mismatch_abs)], n_steps)
-        else:
-            return input_with_mask_tensor
+              outputs = self.base_model(
+                      input_ids=input_with_mask_tensor,
+                      output_hidden_states=True,
+                      use_cache=False
+                  )
+              hidden_states = outputs.hidden_states[-1]
+              current_ntp_idx = input_tensor.shape[1] - 1
+              output_tokens = torch.argmax(outputs.logits, dim=-1)
+              prev_token = output_tokens[:, current_ntp_idx].unsqueeze(0)
+              input_with_mask_tensor[:, current_ntp_idx+1] = prev_token.squeeze(1)
+              current_mtp_idx = current_ntp_idx + 1
+              embedding = self.base_model.get_input_embeddings()
+              for i in range(self.num_masks-1):
+
+                  mtp_hidden = hidden_states[:, current_mtp_idx, :]
+
+                  # Use the last token in prev_token for embedding
+                  last_token = prev_token[:, -1]  # Shape: [batch_size]
+                  prev_emb = embedding(last_token)  # Shape: [batch_size, embed_dim]
+
+                  # Use sampler head for prediction
+                  sampler_logits = self.sampler_head(mtp_hidden, prev_emb)
+                  next_token = torch.argmax(sampler_logits, dim=-1, keepdim=True)  # Shape: [batch_size, 1]
+
+                  # Update the mask tensor
+                  input_with_mask_tensor[:, current_mtp_idx+1] = next_token.squeeze(1)
+
+                  # Append the new token to prev_token (keep accumulating)
+                  prev_token = torch.cat([prev_token, next_token], dim=1)  # Shape: [batch_size, seq_len + i + 1]
+
+                  # Update for next iteration
+                  current_mtp_idx += 1
+
+        with torch.no_grad():
+                outputs = self.base_model(
+                            input_ids=input_with_mask_tensor,
+                            output_hidden_states=False,
+                            use_cache=False
+                        )
+                next_token = torch.argmax(outputs.logits, dim=-1)
+                # Ignore the last token and check if :-(model.num_mask-1) matches
+                ntp_verification_tensor = next_token[:,:-1]
+                verification_tensor1 = ntp_verification_tensor[:, -(self.num_masks-1):]
+                verification_tensor2 = input_with_mask_tensor[:,1:][:, -(self.num_masks-1):]
+                mismatch_mask = verification_tensor1 != verification_tensor2
+                print(f"Speculated tokens: {verification_tensor1}")
+                print(f"Verification tokens: {verification_tensor2}")
+                print(f"Mismatch mask:  {mismatch_mask}")
+
+                if mismatch_mask.any():
+                    first_mismatch_abs = torch.where(mismatch_mask)[1][0] + verification_tensor1.shape[1] - (self.num_masks - 1)
+                    print(f'Speculated {first_mismatch_abs} token successfully')
+                    start_pos = input_tensor.shape[1] + first_mismatch_abs
+                    n_steps = input_with_mask_tensor.shape[1] - start_pos - 1
+                    return self.autoregressive_decoding(input_with_mask_tensor[:, :(input_tensor.shape[1]+1+first_mismatch_abs)], n_steps)
+                    
+                else:
+                    return input_with_mask_tensor
