@@ -164,6 +164,8 @@ class MultiTokenPredictionModel(nn.Module):
         # Introduce mtp_mask hooks here
         self.current_mtp_mask = mtp_mask
         num_heads = self.base_model.config.num_attention_heads
+        print(f"attention_mask shape BEFORE processing: {attention_mask.shape}")
+        print(f"input_ids shape: {input_ids.shape}")
         # Forward pass through base model
         outputs = self.base_model(
             input_ids=input_ids,
