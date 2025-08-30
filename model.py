@@ -204,8 +204,9 @@ class MultiTokenPredictionModel(nn.Module):
         batch_size, seq_len = input_ids.shape
         
         # For each position, determine what the "real" token should be
+        labels_fixed = torch.where(labels == -100, torch.zeros_like(labels), labels)
         # Use input_ids where mask=0, labels where mask=1
-        real_tokens = torch.where(mtp_mask, labels, input_ids)
+        real_tokens = torch.where(mtp_mask, labels_fixed, input_ids)
         
         # Shift everything by 1 position for causal prediction
         prev_real_tokens = real_tokens[:, :-1]      # Real previous tokens [0, 1, ..., seq_len-2]
