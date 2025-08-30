@@ -72,7 +72,7 @@ class HFMultiTokenPredictionModel(PreTrainedModel):
             mtp_mask=mtp_mask,
             labels=labels,
             position_ids=position_ids,
-            attention_bias=attention_bias,
+            attention_mask=attention_bias,
         )
         
         # Extract components
