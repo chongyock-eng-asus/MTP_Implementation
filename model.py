@@ -163,13 +163,13 @@ class MultiTokenPredictionModel(nn.Module):
 
         # Introduce mtp_mask hooks here
         self.current_mtp_mask = mtp_mask
-
+        num_heads = self.base_model.config.num_attention_heads
         # Forward pass through base model
         outputs = self.base_model(
             input_ids=input_ids,
             output_hidden_states=True,
             use_cache=False,
-            attention_mask=attention_mask.unsqueeze(1),
+            attention_mask=.unsqueeze(1).expand(-1, num_heads, -1, -1),
         )
         logits = outputs.logits
         hidden_state = outputs.hidden_states[-1]
