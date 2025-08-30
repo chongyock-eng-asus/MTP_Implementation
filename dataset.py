@@ -27,12 +27,75 @@ class MultiTokenPredictionDataset(Dataset):
         input_sentence = self.ds[idx]
         tokenized_input = self.tokenizer.encode(input_sentence)
         input_id, position_id, labels, mtp_mask = self._create_masked_input(tokenized_input)
+        
+        seq_len = input_id.shape[0]
+        actual_length = len(tokenized_input)
+        attn_bias = train_dataset._create_attention_bias_matrix(tokenized_input, mtp_mask, seq_len, actual_length)
         return {
             'input_ids': input_id,
             'position_ids': position_id,
             'mtp_mask': mtp_mask,
-            'labels':labels
+            'labels':labels,
+            'attention_bias':attn_bias,
         }
+    def _create_attention_bias_matrix(self, input_ids, mtp_mask, seq_len, actual_length):
+        
+        # Initialize bias matrix - start with all positions blocked (-inf)
+        bias_matrix = torch.full((seq_len, seq_len), float('-inf'))
+        
+        # Convert mask to tensor for easier indexing
+        if isinstance(mtp_mask, torch.Tensor):
+            mtp_mask = mtp_mask[:actual_length].clone().detach()
+        else:
+            mtp_mask = torch.tensor(mtp_mask[:actual_length], dtype=torch.bool)
+        
+        ntp_mask = ~mtp_mask  # NTP mask is opposite of MTP mask
+        
+        # Identify MTP blocks (consecutive sequences of MTP tokens)
+        mtp_blocks = []
+        if mtp_mask.any():
+            mtp_positions = torch.where(mtp_mask)[0]
+            
+            # Group consecutive MTP positions into blocks
+            current_block = [mtp_positions[0].item()]
+            for i in range(1, len(mtp_positions)):
+                if mtp_positions[i] == mtp_positions[i-1] + 1:
+                    current_block.append(mtp_positions[i].item())
+                else:
+                    mtp_blocks.append(current_block)
+                    current_block = [mtp_positions[i].item()]
+            mtp_blocks.append(current_block)
+        
+        # Create block diagonal structure
+        for i in range(min(actual_length, len(mtp_mask))):
+            
+            if ntp_mask[i]:  # Current token is NTP
+                # NTP tokens attend only to previous NTP tokens (causal attention)
+                for j in range(i + 1):  # j <= i (causal)
+                    if j < len(ntp_mask) and ntp_mask[j]:
+                        bias_matrix[i, j] = 0.0
+                        
+            else:  # Current token is MTP
+                # Find which MTP block this token belongs to
+                current_block = None
+                for block in mtp_blocks:
+                    if i in block:
+                        current_block = block
+                        break
+                
+                if current_block is not None:
+                    # MTP token attends to:
+                    # 1. All previous NTP tokens
+                    for j in range(min(actual_length, len(ntp_mask))):
+                        if j < i and ntp_mask[j]:  # Previous NTP tokens only
+                            bias_matrix[i, j] = 0.0
+                    
+                    # 2. All tokens in the same MTP block (but only previous ones + self - causal)
+                    for j in current_block:
+                        if j < actual_length and j < len(ntp_mask) and j <= i:  # Causal: j <= i
+                            bias_matrix[i, j] = 0.0
+        
+        return bias_matrix
 
     def _create_masked_input(self, sequence):
         input_id = []
