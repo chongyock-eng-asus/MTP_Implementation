@@ -202,7 +202,7 @@ class MultiTokenPredictionModel(nn.Module):
         
         # Shift everything by 1 position
         # We want to predict position i using information from position i-1
-        prev_tokens = input_ids[:, :-1]           # tokens at positions [0, 1, 2, ..., seq_len-2]
+        prev_tokens = labels[:, :-1]           # tokens at positions [0, 1, 2, ..., seq_len-2]
         current_hidden = hidden_state[:, 1:]      # hidden states at positions [1, 2, 3, ..., seq_len-1]  
         current_targets = labels[:, 1:]           # targets at positions [1, 2, 3, ..., seq_len-1]
         mtp_positions = mtp_mask[:, 1:]           # MTP mask at positions [1, 2, 3, ..., seq_len-1]
