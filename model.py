@@ -157,7 +157,8 @@ class MultiTokenPredictionModel(nn.Module):
         input_ids: torch.Tensor,
         mtp_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor]=None,
+        position_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
 
         # Introduce mtp_mask hooks here
@@ -167,7 +168,8 @@ class MultiTokenPredictionModel(nn.Module):
         outputs = self.base_model(
             input_ids=input_ids,
             output_hidden_states=True,
-            use_cache=False
+            use_cache=False,
+            attention_mask=attention_mask.unsqueeze(0),
         )
         logits = outputs.logits
         hidden_state = outputs.hidden_states[-1]
